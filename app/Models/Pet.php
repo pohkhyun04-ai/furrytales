@@ -146,23 +146,77 @@ class Pet extends Model
     public static function detectBreed($imagePath)
     {
         $script = base_path('ai/detect_breed.py');
-        $image  = realpath($imagePath);
+        $image = realpath($imagePath);
 
-        if (!$image || !file_exists($script)) {
-            return ['breed' => '', 'type' => '', 'error' => 'File not found'];
+        if (!$image || !is_file($image)) {
+            return ['breed' => '', 'type' => '', 'error' => 'The uploaded image could not be found.'];
         }
 
-        $command = "py " . escapeshellarg($script) . " " . escapeshellarg($image) . " 2>&1";
-        $output = trim(shell_exec($command));
+        if (!is_file($script)) {
+            return ['breed' => '', 'type' => '', 'error' => 'The AI breed detection script is missing.'];
+        }
 
-        if (strpos($output, '|') !== false) {
-            [$breed, $type] = explode('|', $output, 2);
+        $python = config('ai.python_binary', 'py');
+        $pythonArgs = preg_split('/\s+/', trim((string) config('ai.python_args', '-3.11')));
+        $pythonArgs = array_values(array_filter($pythonArgs, static fn ($arg) => $arg !== ''));
+        $processEnvironment = [
+            'PYTHONHOME' => false,
+            'PYTHONPATH' => false,
+            'PYTHONUSERBASE' => false,
+        ];
+        if (PHP_OS_FAMILY === 'Windows') {
+            $windowsRoot = getenv('SystemRoot') ?: (getenv('WINDIR') ?: 'C:\\Windows');
+            $systemPath = trim((string) getenv('PATH'));
+            $processEnvironment['SystemRoot'] = $windowsRoot;
+            $processEnvironment['WINDIR'] = $windowsRoot;
+            $processEnvironment['PATH'] = ($systemPath !== '' ? rtrim($systemPath, ';') . ';' : '')
+                . $windowsRoot . '\\System32;' . $windowsRoot;
+        }
+
+        try {
+            $process = new \Symfony\Component\Process\Process(
+                array_merge([$python], $pythonArgs, [$script, $image]),
+                base_path(),
+                $processEnvironment
+            );
+            $process->setTimeout(180);
+            $process->run();
+
+            $output = trim($process->getOutput());
+
+            if (!$process->isSuccessful()) {
+                $error = trim($process->getErrorOutput()) ?: $output ?: 'The AI process exited unexpectedly.';
+                return [
+                    'breed' => '',
+                    'type' => '',
+                    'error' => 'Breed detection could not run. ' . mb_substr($error, 0, 500),
+                ];
+            }
+
+            if (str_contains($output, '|')) {
+                [$breed, $type] = explode('|', $output, 2);
+
+                if (trim($breed) !== '' && trim($type) !== '') {
+                    return [
+                        'breed' => trim($breed),
+                        'type' => trim($type),
+                    ];
+                }
+            }
+
             return [
-                'breed' => trim($breed),
-                'type'  => trim($type),
+                'breed' => '',
+                'type' => '',
+                'error' => 'The AI model did not return a breed prediction. Please enter the breed manually.',
+            ];
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return [
+                'breed' => '',
+                'type' => '',
+                'error' => 'Breed detection is temporarily unavailable. Check the configured Python environment and AI dependencies.',
             ];
         }
-
-        return ['breed' => '', 'type' => '', 'error' => $output];
     }
 }

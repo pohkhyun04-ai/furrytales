@@ -62,7 +62,7 @@ class PetController extends Controller
             'outlets',
             'suppliers',
             'nextPetID'
-        ));
+        ))->with('currentPage', 'pets');
     }
 
 
@@ -323,8 +323,10 @@ class PetController extends Controller
     public function detectBreed(Request $request)
     {
         $request->validate([
-            'image' => 'required|image|max:2048',
+            'image' => 'required|image|max:5120',
         ]);
+
+        $fullPath = null;
 
         try {
             $tempPath = $request->file('image')->store('detect', 'uploads');
@@ -332,17 +334,18 @@ class PetController extends Controller
 
             $result = Pet::detectBreed($fullPath);
 
-            if (file_exists($fullPath)) {
-                unlink($fullPath);
-            }
-
             return response()->json($result);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            report($e);
             return response()->json([
                 'breed' => '',
                 'type'  => '',
-                'error' => $e->getMessage(),
+                'error' => 'The uploaded image could not be analysed. Please try another image.',
             ], 500);
+        } finally {
+            if ($fullPath && is_file($fullPath)) {
+                @unlink($fullPath);
+            }
         }
     }
 

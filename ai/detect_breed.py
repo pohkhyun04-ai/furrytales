@@ -1,63 +1,80 @@
 #!/usr/bin/env python
+"""Classify an uploaded pet image and print: breed|pet_type."""
+
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress TensorFlow logs
-import warnings
-warnings.filterwarnings("ignore")  # ignore all warnings
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 import sys
-import cv2
-import numpy as np
-import tensorflow as tf
-from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input, decode_predictions
+import warnings
+warnings.filterwarnings("ignore")
 
-tf.get_logger().setLevel("ERROR")  # suppress TF logs
 
 def map_to_pet_type(breed_label):
-    label_lower = breed_label.lower()
-    if any(k in label_lower for k in ["dog", "retriever", "terrier", "shepherd", "poodle", "husky"]):
+    label = breed_label.lower().replace("_", " ").replace("-", " ")
+
+    if any(word in label for word in (
+        "dog", "retriever", "terrier", "shepherd", "poodle", "husky",
+        "spaniel", "beagle", "bulldog", "chihuahua", "collie", "dachshund",
+        "doberman", "maltese", "rottweiler", "schnauzer", "shih tzu",
+        "pug", "samoyed", "wolfhound"
+    )):
         return "Dog"
-    elif any(k in label_lower for k in ["cat", "kitten", "persian", "siamese"]):
+    if any(word in label for word in (
+        "cat", "kitten", "persian", "siamese", "tabby", "egyptian cat"
+    )):
         return "Cat"
-    elif any(k in label_lower for k in ["rabbit", "hare"]):
+    if any(word in label for word in ("rabbit", "hare")):
         return "Rabbit"
-    elif any(k in label_lower for k in ["hamster", "guinea pig", "mouse", "rat", "gerbil"]):
+    if any(word in label for word in ("hamster", "guinea pig", "mouse", "rat", "gerbil")):
         return "Hamster"
-    elif any(k in label_lower for k in ["bird", "parrot", "sparrow", "macaw"]):
+    if any(word in label for word in ("bird", "parrot", "sparrow", "macaw", "cockatoo", "finch")):
         return "Bird"
-    elif any(k in label_lower for k in ["turtle", "tortoise"]):
+    if any(word in label for word in ("turtle", "tortoise", "iguana", "lizard", "snake", "gecko")):
         return "Reptile"
-    else:
-        return "Other"
+    return "Other"
+
 
 def main():
     if len(sys.argv) < 2:
-        print("|Other", flush=True)
-        sys.exit(0)
+        raise ValueError("Image path was not provided.")
+
+    # Load asyncio before TensorFlow's test/distribution imports on Windows.
+    import asyncio  # noqa: F401
+    import cv2
+    import numpy as np
+    import tensorflow as tf
+    from tensorflow.keras.applications.resnet50 import (
+        ResNet50,
+        decode_predictions,
+        preprocess_input,
+    )
+
+    tf.get_logger().setLevel("ERROR")
 
     image_path = sys.argv[1]
-    img = cv2.imread(image_path)
-    if img is None:
-        print("|Other", flush=True)
-        sys.exit(0)
+    image_bytes = np.fromfile(image_path, dtype=np.uint8)
+    image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
 
-    try:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, (224, 224))
-        x = np.expand_dims(img, axis=0)
-        x = preprocess_input(x)
+    if image is None:
+        raise ValueError("The uploaded file is not a supported image.")
 
-        model = ResNet50(weights="imagenet")
-        preds = model.predict(x, verbose=0)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (224, 224), interpolation=cv2.INTER_AREA)
+    batch = np.expand_dims(image.astype(np.float32), axis=0)
+    batch = preprocess_input(batch)
 
-        breed = decode_predictions(preds, top=1)[0][0][1]
-        pet_type = map_to_pet_type(breed)
+    model = ResNet50(weights="imagenet")
+    predictions = model.predict(batch, verbose=0)
+    breed_label = decode_predictions(predictions, top=1)[0][0][1]
+    breed = breed_label.replace("_", " ").title()
+    pet_type = map_to_pet_type(breed_label)
 
-        # Only print this last line
-        print(f"{breed.replace('_',' ').title()}|{pet_type}", flush=True)
+    print(f"{breed}|{pet_type}", flush=True)
 
-    except Exception as e:
-        # Always return a valid PHP-safe line
-        print("|Other", flush=True)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        print(f"Pet breed detector error: {error}", file=sys.stderr, flush=True)
+        sys.exit(1)

@@ -1,0 +1,4 @@
+# Supported Windows development runtime: Python 3.11
+tensorflow-intel==2.15.1
+opencv-python-headless==4.10.0.84
+numpy==1.26.4

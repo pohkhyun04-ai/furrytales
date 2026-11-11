@@ -28,6 +28,17 @@ use App\Http\Controllers\admin\WeatherTestController;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 
+// Standalone UI comparison page for the admin add-pet form.
+Route::get('/prototype', function () {
+    $categories = \App\Models\Pet::getAllCategories();
+    $outlets = \App\Models\Outlet::all();
+    $suppliers = \App\Models\Supplier::all();
+    $nextPetID = \App\Models\Pet::generateNextPetID('A');
+
+    return view('admin.pets.petPrototype', compact('categories', 'outlets', 'suppliers', 'nextPetID'))
+        ->with('currentPage', 'pets');
+})->name('prototype');
+
 
 Route::post('/login', [AuthController::class, 'login'])->name('login.submit');
 Route::post('/register', [AuthController::class, 'register'])->name('register.submit');
